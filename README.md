@@ -1,7 +1,5 @@
 <div align="center">
-  <img src="logo.png" alt="Agent Owl Logo" width="300"/>
-
-  # 🦉 Agent Owl
+  <img src="logo.png" alt="Agent Owl Logo" width="500"/>
 
   **Smart AI Agent Monitor** - Keep your AI agents working autonomously without interruption spam
 

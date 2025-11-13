@@ -1,6 +1,8 @@
 <div align="center">
   <img src="logo.png" alt="Agent Owl Logo" width="500"/>
 
+  ---
+
   **Smart AI Agent Monitor** - Keep your AI agents working autonomously without interruption spam
 
   <p>Agent Owl watches your AI agents (like Codex, Aider, Claude Code, etc.) and intelligently detects when they're truly idle versus actively thinking. It uses screenshot comparison to avoid interrupting agents mid-thought and only sends continuation prompts when genuinely needed.</p>

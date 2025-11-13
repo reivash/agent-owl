@@ -1,0 +1,15 @@
+{
+  "_comment": "Basic Agent Owl configuration - no custom verification",
+
+  "window_pattern": "Agent",
+  "check_interval": 60,
+  "screenshots_to_compare": 3,
+  "cooldown_minutes": 10,
+  "screenshot_threshold": 0.01,
+  "screenshot_dir": "screenshots",
+
+  "prompts": {
+    "default": "Continue working on the task.",
+    "idle": "You appear to be idle. Please continue with your work."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "_comment": "Agent Owl configuration for monitoring Codex working on Unity projects",
+
+  "window_pattern": "PowerShell",
+  "check_interval": 90,
+  "screenshots_to_compare": 4,
+  "cooldown_minutes": 20,
+  "screenshot_threshold": 0.01,
+  "screenshot_dir": "screenshots",
+
+  "verification_plugin": "examples/unity_verification.py",
+
+  "prompts": {
+    "default": "Continue working on the task.",
+    "unity_running": "Continue fixing the Unity project. Focus on the current task.",
+    "unity_not_running": "Unity is not running. Please start Unity and continue with the project.",
+    "unity_errors": "Unity has errors. Please fix the errors and continue.",
+    "task_complete": "Can you verify the task is complete? If yes, great! If not, continue working."
+  }
+}

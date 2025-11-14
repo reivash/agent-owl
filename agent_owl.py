@@ -156,12 +156,28 @@ class AgentOwl:
                 window.restore()
                 time.sleep(0.5)
 
+            # Try to activate window to get proper dimensions
+            try:
+                if not window.isActive:
+                    window.activate()
+                    time.sleep(0.3)
+            except:
+                pass  # Some windows can't be activated
+
             x, y, width, height = window.left, window.top, window.width, window.height
 
             # Validate dimensions
             if width <= 0 or height <= 0:
-                self.log(f"Invalid window dimensions: {width}x{height} - window may be minimized")
-                return None
+                self.log(f"Invalid window dimensions: {width}x{height} - trying to activate window")
+                # Try one more time after activation
+                try:
+                    window.activate()
+                    time.sleep(0.5)
+                    x, y, width, height = window.left, window.top, window.width, window.height
+                    if width <= 0 or height <= 0:
+                        return None
+                except:
+                    return None
 
             # Ensure coordinates are within screen bounds
             if x < 0:

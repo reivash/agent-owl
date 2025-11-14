@@ -112,19 +112,26 @@ class AgentOwl:
                 import win32process
                 import win32gui
 
+                # Collect all PowerShell windows, prefer visible ones
+                powershell_windows = []
                 for window in windows:
-                    if not window.title.strip():
-                        continue
-
                     try:
                         # Get process ID for this window
                         _, window_pid = win32process.GetWindowThreadProcessId(window._hWnd)
 
                         # Check if this window belongs to a PowerShell process
                         if window_pid in powershell_pids:
-                            return window
+                            # Check if window is visible (has non-zero dimensions)
+                            is_visible = window.width > 0 and window.height > 0
+                            powershell_windows.append((window, is_visible))
                     except:
                         pass
+
+                # Return first visible window, or first window if none visible
+                if powershell_windows:
+                    # Sort by visibility (visible windows first)
+                    powershell_windows.sort(key=lambda x: x[1], reverse=True)
+                    return powershell_windows[0][0]
             except ImportError:
                 # pywin32 not available, use fallback
                 pass
@@ -144,6 +151,24 @@ class AgentOwl:
         """Capture screenshot of window"""
         try:
             x, y, width, height = window.left, window.top, window.width, window.height
+
+            # Validate dimensions
+            if width <= 0 or height <= 0:
+                self.log(f"Invalid window dimensions: {width}x{height}")
+                return None
+
+            # Ensure coordinates are within screen bounds
+            if x < 0:
+                width += x
+                x = 0
+            if y < 0:
+                height += y
+                y = 0
+
+            if width <= 0 or height <= 0:
+                self.log(f"Window outside screen bounds")
+                return None
+
             screenshot = pyautogui.screenshot(region=(x, y, width, height))
             return screenshot
         except Exception as e:

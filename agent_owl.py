@@ -93,12 +93,48 @@ class AgentOwl:
             print(f"[{timestamp}] {safe_message}")
 
     def find_window(self):
-        """Find the target window"""
+        """Find the target window by checking process name"""
         try:
+            import psutil
             windows = gw.getAllWindows()
-            for window in windows:
-                if self.window_pattern.lower() in window.title.lower():
-                    return window
+
+            # Get all PowerShell process IDs
+            powershell_pids = []
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    if 'powershell' in proc.info['name'].lower():
+                        powershell_pids.append(proc.info['pid'])
+                except:
+                    pass
+
+            # Try Windows-specific window-to-process mapping
+            try:
+                import win32process
+                import win32gui
+
+                for window in windows:
+                    if not window.title.strip():
+                        continue
+
+                    try:
+                        # Get process ID for this window
+                        _, window_pid = win32process.GetWindowThreadProcessId(window._hWnd)
+
+                        # Check if this window belongs to a PowerShell process
+                        if window_pid in powershell_pids:
+                            return window
+                    except:
+                        pass
+            except ImportError:
+                # pywin32 not available, use fallback
+                pass
+
+            # Fallback: check by window title pattern
+            if self.window_pattern:
+                for window in windows:
+                    if self.window_pattern.lower() in window.title.lower():
+                        return window
+
             return None
         except Exception as e:
             self.log(f"Error finding window: {e}")
@@ -138,12 +174,14 @@ class AgentOwl:
             self.log(f"Error comparing images: {e}")
             return False
 
-    def is_agent_truly_idle(self, window):
+    def is_agent_truly_idle(self, window, current_screenshot=None):
         """
         Determine if agent is truly idle by comparing screenshots
         Returns True only if last N screenshots are identical (no new output)
         """
-        current_screenshot = self.capture_window_screenshot(window)
+        if current_screenshot is None:
+            current_screenshot = self.capture_window_screenshot(window)
+
         if not current_screenshot:
             return False
 
@@ -174,6 +212,151 @@ class AgentOwl:
             return True
         else:
             self.log(f"✓ Agent is ACTIVE (screenshots show changes - likely thinking/working)")
+            return False
+
+    def detect_permission_prompt(self, screenshot):
+        """
+        Detect if the screenshot shows a permission prompt
+        Uses both OCR (if available) and pixel-based detection
+        """
+        try:
+            # Try OCR-based detection first
+            try:
+                import pytesseract
+                text = pytesseract.image_to_string(screenshot).lower()
+
+                permission_keywords = [
+                    'do you want to proceed',
+                    'permission',
+                    'allow',
+                    'enable full access',
+                    'approve',
+                    'grant access',
+                    'authorize',
+                    'yes',
+                    'no'
+                ]
+
+                for keyword in permission_keywords:
+                    if keyword in text:
+                        self.log(f"🔒 Permission prompt detected (OCR): '{keyword}'")
+                        return True
+            except ImportError:
+                # OCR not available - permission detection disabled
+                # Install pytesseract for automatic permission approval
+                pass
+
+            return False
+        except Exception as e:
+            self.log(f"Error detecting permission prompt: {e}")
+            return False
+
+    def approve_permission(self, window):
+        """
+        Automatically approve permission by selecting 'Enable full access' option
+        Uses arrow keys to navigate and Enter to confirm
+        """
+        try:
+            self.log("🔓 Auto-approving permission...")
+
+            # Activate window
+            if window.isMinimized:
+                window.restore()
+                time.sleep(0.5)
+
+            window.activate()
+            time.sleep(0.5)
+
+            # Press down arrow 2-3 times to select "Enable full access" option
+            # (usually the last/bottom option in Claude's permission prompts)
+            for i in range(3):
+                pyautogui.press('down')
+                time.sleep(0.1)
+
+            # Press Enter to confirm
+            time.sleep(0.3)
+            pyautogui.press('enter')
+            time.sleep(0.5)
+
+            self.log("✓ Permission approved successfully")
+            self.screenshot_history = []  # Clear history after approval
+            return True
+        except Exception as e:
+            self.log(f"Error approving permission: {e}")
+            return False
+
+    def detect_question_prompt(self, screenshot):
+        """
+        Detect if the screenshot shows a multiple-choice question from Claude
+        Looks for numbered options, bullet points, or question patterns
+        """
+        try:
+            # Try OCR-based detection
+            try:
+                import pytesseract
+                text = pytesseract.image_to_string(screenshot).lower()
+
+                # Look for question indicators
+                question_patterns = [
+                    'which',
+                    'what',
+                    'how',
+                    'would you like',
+                    'choose',
+                    'select',
+                    '?',
+                ]
+
+                # Look for option patterns (numbered or bulleted lists)
+                option_patterns = [
+                    '1.',
+                    '2.',
+                    '•',
+                    '-',
+                    'option',
+                ]
+
+                has_question = any(pattern in text for pattern in question_patterns)
+                has_options = any(pattern in text for pattern in option_patterns)
+
+                if has_question and has_options:
+                    self.log(f"❓ Question prompt detected - Claude is asking for input")
+                    return True
+            except ImportError:
+                # OCR not available - question detection disabled
+                pass
+
+            return False
+        except Exception as e:
+            self.log(f"Error detecting question prompt: {e}")
+            return False
+
+    def answer_question(self, window):
+        """
+        Automatically answer a question by selecting the first/top option
+        Uses Enter key to select the default/first option
+        """
+        try:
+            self.log("💡 Auto-answering question with top option...")
+
+            # Activate window
+            if window.isMinimized:
+                window.restore()
+                time.sleep(0.5)
+
+            window.activate()
+            time.sleep(0.5)
+
+            # Simply press Enter to select the first/default option
+            # Claude typically highlights the first option by default
+            pyautogui.press('enter')
+            time.sleep(0.5)
+
+            self.log("✓ Question answered successfully (selected top option)")
+            self.screenshot_history = []  # Clear history after answering
+            return True
+        except Exception as e:
+            self.log(f"Error answering question: {e}")
             return False
 
     def run_verification(self):
@@ -210,32 +393,41 @@ class AgentOwl:
         try:
             self.log(f"Sending prompt: {message}")
 
-            # Restore if minimized
-            if window.isMinimized:
-                window.restore()
+            # Disable PyAutoGUI failsafe temporarily
+            original_failsafe = pyautogui.FAILSAFE
+            pyautogui.FAILSAFE = False
+
+            try:
+                # Restore if minimized
+                if window.isMinimized:
+                    window.restore()
+                    time.sleep(0.5)
+
+                # Activate window
+                window.activate()
+                time.sleep(1.0)
+
+                # Click in window
+                click_x = window.left + (window.width // 2)
+                click_y = window.top + window.height - 100
+                pyautogui.click(click_x, click_y)
                 time.sleep(0.5)
 
-            # Activate window
-            window.activate()
-            time.sleep(1.0)
+                # Type message
+                pyautogui.write(message, interval=0.05)
+                time.sleep(0.3)
+                pyautogui.press('enter')
 
-            # Click in window
-            click_x = window.left + (window.width // 2)
-            click_y = window.top + window.height - 100
-            pyautogui.click(click_x, click_y)
-            time.sleep(0.5)
+                self.last_prompt_time = time.time()
+                self.screenshot_history = []  # Clear history after prompt
+                self.interaction_count += 1
 
-            # Type message
-            pyautogui.write(message, interval=0.05)
-            time.sleep(0.3)
-            pyautogui.press('enter')
+                self.log("✓ Prompt sent successfully")
+                return True
+            finally:
+                # Restore failsafe setting
+                pyautogui.FAILSAFE = original_failsafe
 
-            self.last_prompt_time = time.time()
-            self.screenshot_history = []  # Clear history after prompt
-            self.interaction_count += 1
-
-            self.log("✓ Prompt sent successfully")
-            return True
         except Exception as e:
             self.log(f"Error sending prompt: {e}")
             return False
@@ -253,10 +445,27 @@ class AgentOwl:
 
         self.log(f"✓ Found window: {window.title}")
 
+        # Capture screenshot once for all checks
+        current_screenshot = self.capture_window_screenshot(window)
+        if not current_screenshot:
+            return False
+
         # Check if truly idle using screenshots
-        truly_idle = self.is_agent_truly_idle(window)
+        truly_idle = self.is_agent_truly_idle(window, current_screenshot)
 
         if not truly_idle:
+            return True
+
+        # Agent is idle - check if it's waiting for permission
+        if self.detect_permission_prompt(current_screenshot):
+            self.log("✓ Detected permission prompt while agent is idle")
+            self.approve_permission(window)
+            return True
+
+        # Agent is idle - check if it's waiting for an answer to a question
+        if self.detect_question_prompt(current_screenshot):
+            self.log("✓ Detected question prompt while agent is idle")
+            self.answer_question(window)
             return True
 
         # Agent is idle - check cooldown

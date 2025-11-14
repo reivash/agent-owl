@@ -150,11 +150,17 @@ class AgentOwl:
     def capture_window_screenshot(self, window):
         """Capture screenshot of window"""
         try:
+            # Restore window if minimized
+            if window.isMinimized:
+                self.log("Window is minimized, restoring...")
+                window.restore()
+                time.sleep(0.5)
+
             x, y, width, height = window.left, window.top, window.width, window.height
 
             # Validate dimensions
             if width <= 0 or height <= 0:
-                self.log(f"Invalid window dimensions: {width}x{height}")
+                self.log(f"Invalid window dimensions: {width}x{height} - window may be minimized")
                 return None
 
             # Ensure coordinates are within screen bounds

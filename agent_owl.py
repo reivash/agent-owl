@@ -93,17 +93,19 @@ class AgentOwl:
             print(f"[{timestamp}] {safe_message}")
 
     def find_window(self):
-        """Find the target window by checking process name"""
+        """Find the target window by checking for terminal emulators hosting PowerShell"""
         try:
             import psutil
             windows = gw.getAllWindows()
 
-            # Get all PowerShell process IDs
-            powershell_pids = []
+            # Get terminal emulator process IDs (Windows Terminal, ConHost, etc.)
+            terminal_pids = []
             for proc in psutil.process_iter(['pid', 'name']):
                 try:
-                    if 'powershell' in proc.info['name'].lower():
-                        powershell_pids.append(proc.info['pid'])
+                    proc_name = proc.info['name'].lower()
+                    # Look for Windows Terminal, OpenConsole, or ConHost processes
+                    if any(term in proc_name for term in ['windowsterminal', 'openconsole', 'conhost']):
+                        terminal_pids.append(proc.info['pid'])
                 except:
                     pass
 
@@ -112,26 +114,44 @@ class AgentOwl:
                 import win32process
                 import win32gui
 
-                # Collect all PowerShell windows, prefer visible ones
-                powershell_windows = []
+                # Collect terminal windows with scoring
+                terminal_windows = []
                 for window in windows:
                     try:
                         # Get process ID for this window
                         _, window_pid = win32process.GetWindowThreadProcessId(window._hWnd)
 
-                        # Check if this window belongs to a PowerShell process
-                        if window_pid in powershell_pids:
+                        # Check if this window belongs to a terminal process
+                        if window_pid in terminal_pids:
+                            # Score the window based on various criteria
+                            score = 0
+
                             # Check if window is visible (has non-zero dimensions)
                             is_visible = window.width > 0 and window.height > 0
-                            powershell_windows.append((window, is_visible))
+                            if is_visible:
+                                score += 100
+
+                            # Prefer windows with star symbol (✳) in title - Claude uses these
+                            if '✳' in window.title or '?' in window.title:
+                                score += 50
+
+                            # Prefer larger windows (likely to be the main terminal)
+                            if is_visible and window.width > 800 and window.height > 600:
+                                score += 25
+
+                            # Check if title contains common terminal/Claude patterns
+                            title_lower = window.title.lower()
+                            if any(pattern in title_lower for pattern in ['powershell', 'claude', 'stock', 'predictor', 'experiment']):
+                                score += 10
+
+                            terminal_windows.append((window, score))
                     except:
                         pass
 
-                # Return first visible window, or first window if none visible
-                if powershell_windows:
-                    # Sort by visibility (visible windows first)
-                    powershell_windows.sort(key=lambda x: x[1], reverse=True)
-                    return powershell_windows[0][0]
+                # Return highest scoring window
+                if terminal_windows:
+                    terminal_windows.sort(key=lambda x: x[1], reverse=True)
+                    return terminal_windows[0][0]
             except ImportError:
                 # pywin32 not available, use fallback
                 pass
